@@ -1,0 +1,12 @@
+{
+    "name": "spotify-color-map-root",
+    "version": "1.0.0",
+    "description": "Root script to run Spotify Color Map",
+    "scripts": {
+        "install-all": "npm install && npm install --prefix server && npm install --prefix client",
+        "start": "concurrently \"npm run start --prefix server\" \"npm run dev --prefix client -- --port 5174\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}
