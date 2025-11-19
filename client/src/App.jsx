@@ -9,6 +9,8 @@ function App() {
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
+  const [loadingProgress, setLoadingProgress] = useState({ stage: '', current: 0, total: 0 });
+
   useEffect(() => {
     // Check for tokens in URL
     const params = new URLSearchParams(window.location.search);
@@ -16,26 +18,55 @@ function App() {
 
     if (accessToken) {
       setIsLoggedIn(true);
-      fetchSongs(accessToken);
+      fetchSongsStream(accessToken);
       // Clean URL
       window.history.replaceState({}, document.title, "/");
     }
   }, []);
 
-  const fetchSongs = async (token) => {
+  const fetchSongsStream = (token) => {
     setLoading(true);
-    try {
-      const response = await axios.get(`/api/songs?access_token=${token}`);
-      setSongs(response.data);
-    } catch (error) {
-      console.error("Failed to fetch songs", error);
-    } finally {
+    setLoadingProgress({ stage: 'Connecting...', current: 0, total: 0 });
+
+    const eventSource = new EventSource(`http://127.0.0.1:5000/api/songs-stream?access_token=${token}`);
+
+    eventSource.onmessage = (event) => {
+      // Keep alive or generic messages
+    };
+
+    eventSource.addEventListener('progress', (event) => {
+      const data = JSON.parse(event.data);
+      setLoadingProgress(data);
+    });
+
+    eventSource.addEventListener('complete', (event) => {
+      const data = JSON.parse(event.data);
+      setSongs(data);
       setLoading(false);
-    }
+      eventSource.close();
+    });
+
+    eventSource.addEventListener('error', (event) => {
+      const data = event.data ? JSON.parse(event.data) : { message: 'Connection error' };
+      console.error("Stream error:", data);
+      setLoading(false);
+      eventSource.close();
+    });
+
+    eventSource.onerror = (err) => {
+      console.error("EventSource failed:", err);
+      setLoading(false);
+      eventSource.close();
+    };
   };
 
   const handleLogin = () => {
     window.location.href = 'http://127.0.0.1:5000/login';
+  };
+
+  const getProgressPercentage = () => {
+    if (!loadingProgress.total) return 0;
+    return Math.round((loadingProgress.current / loadingProgress.total) * 100);
   };
 
   return (
@@ -58,9 +89,24 @@ function App() {
       ) : (
         <>
           {loading ? (
-            <div className="flex items-center justify-center h-screen">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
-              <span className="ml-4 text-xl">Analyzing your library...</span>
+            <div className="flex flex-col items-center justify-center h-screen space-y-6">
+              <div className="w-64 h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-green-500 transition-all duration-300 ease-out"
+                  style={{ width: `${getProgressPercentage()}%` }}
+                ></div>
+              </div>
+              <div className="text-center space-y-2">
+                <div className="text-2xl font-bold text-green-400">
+                  {getProgressPercentage()}%
+                </div>
+                <div className="text-zinc-400">
+                  {loadingProgress.stage === 'fetching' ? 'Fetching songs...' : 'Analyzing colors...'}
+                </div>
+                <div className="text-sm text-zinc-600">
+                  {loadingProgress.current} / {loadingProgress.total}
+                </div>
+              </div>
             </div>
           ) : (
             <ScatterPlot data={songs} onAlbumClick={setSelectedAlbum} />
